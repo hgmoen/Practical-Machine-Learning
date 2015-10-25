@@ -1,0 +1,80 @@
+---
+title: "Machine Learning Assignment"
+author: "Hilary Moen"
+date: "October 21, 2015"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+## Background
+Six participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of the 6 participants to predict the type of barbell lift. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+## Download, read, and clean data
+```{r echo=TRUE, cache=TRUE}
+##load libraries
+library(caret)
+library(kernlab)
+##set working directory
+d <- "/Users/hgmoen/Documents/Data Science/8-MachineLearning"
+setwd(d)
+##download files
+download.file(url='https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', destfile='training.csv', method='curl')
+download.file(url='https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', destfile='test.csv', method='curl')
+##read files
+trainingData <- read.csv("training.csv", na.strings=c("","NA"))
+testData <- read.csv("test.csv", na.strings=c("","NA"))
+#clean data by removing columns that are mostly 'NA' 
+t2 <- trainingData[, colSums(is.na(trainingData)) < 19000]
+finalTest <- testData[, colSums(is.na(testData)) < 19000]
+```
+
+## Train the prediction model
+This model will use belt, arm, dumbbell, and forearm variables.  From examining the dataset, 9-59 of the 60 variables in t2 will be the predictors. The final column of the data set is the classe column, which is the outcome variable. The first 8 variables refer to the subject name, time, and other variables that are not related to the outcome variable, and therefore will not be used to train the prediction model.
+```{r echo=TRUE, cache=TRUE}
+##create data partition using 75% of the data for the training set and 25% for the test set
+inTrain<-createDataPartition(y=t2$classe, p=0.75, list=FALSE)
+##subset training and test sets
+training <- t2[inTrain,8:60]
+testing <- t2[-inTrain,8:60]
+```
+For the training method I selected the random forest method, and used specified training parameters for a cross validation resampling method with 4 folds. 
+```{r echo=TRUE, cache=TRUE}
+set.seed(42)
+modelFit2 <- train(classe ~., data=training, method="rf", trControl=trainControl(allowParallel=T, method="cv", number=4))
+modelFit2$finalModel
+```
+I can see the OOB error value is .63%. This suggests that the model has about a 99.3% out of sample accuracy for the training set, which means it is a very good model.
+
+The following plot provides a summary of the variable important of the top 20 predictors. 
+```{r echo=TRUE, cache=TRUE}
+varImpObj <- varImp(modelFit2)
+plot(varImpObj, main = "Variable Importance of Top 20", top = 20)
+```
+
+## Predict on the test data
+Because the model used the random forest method, it is not necessary to estimate errors on independent data (i.e. the test set), because the testing is already built in to the method. However, especially with a large sample size, it is still possible to over-fit the model to the training data, which is why it is important to test the model in the test data - an independent data set. 
+```{r echo=TRUE, cache=TRUE}
+predictions<-predict(modelFit2, newdata=testing)
+confusionMatrix(predictions, testing$classe)
+```
+Based on the confusion matrix and statistics, the model has an accuracy of .99.4%, which is very high. This is very comparable to the out of sample accuracy the model predicted for the training set, as I would expect because of the random forest method builds testing into the method. 
+
+## Submission to Coursera
+The model predicted the test data set correctly in all 20 cases.
+```{r echo=TRUE, cache=TRUE}
+## run model on test data set to predict classe
+finalPredictions<-predict(modelFit2, newdata=finalTest)
+finalPredictions
+## code for creating individual files for each of the 20 test cases
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(finalPredictions)
+```
